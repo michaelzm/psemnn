@@ -4,6 +4,7 @@ from tqdm import tqdm
 import os
 import zipfile
 import pickle
+from sklearn.model_selection import train_test_split
 
 np.random.seed(1234567890)
 
@@ -24,6 +25,9 @@ class DatasetWorker(object):
         self.train_labels = list()
         self.test_labels = list()
         self.train_labels_uncertainty = list()
+        
+        self.labels = []
+        self.tokens = []
         
     # define here extraction of sentiment, aspect or modifier
     # only once at a time
@@ -66,7 +70,8 @@ class DatasetWorker(object):
     # 2. all_agree -> only use label if all reviewers agreed on the label
     # 3. every_review -> treat every review as its own and dont merge labels
     def splitDataset(self, split_by):
-        self.splitDatasetTokens(split_by)
+        if split_by != "every_review":
+            self.splitDatasetTokens(split_by)
         for d_idx, (k,v) in tqdm(enumerate(self.dataset.items()), desc="split dataset labels"):
             curr_users = [s for s in v.keys() if s != "tokens"]
             
@@ -115,17 +120,25 @@ class DatasetWorker(object):
             elif split_by == "every_review":
                 #jetzt jeden user durchgehen und dessen labels anschauen -> wenn irgendwas außer "O", dann 
                 #den oben erstellten array an dieser stelle mit dessen label ersetzen
+                uncertain = False
                 for usr in curr_users:
+                    for i, e in enumerate(v[usr]["sentiments_difficulty"]):
+                        if e != "O":
+                            uncertain = True
+                    for i, e in enumerate(v[usr]["sentiments_uncertainty"]):
+                        if e != "O":
+                            uncertain = True
                     #print(usr)
                     #print(v[usr][extraction_of])
-                    if d_idx < self.split_size:
-                      #davor v[curr_users[0]][extraction_of], jetzt merged_label
-                      self.train_labels.append(v[usr][self.extraction_of])
-                    else:
-                      self.test_labels.append(v[usr][self.extraction_of])
+                    if uncertain == False:
+                        self.labels.append(v[usr][self.extraction_of])
+                        self.tokens.append(v["tokens"])
             else:
                 print(split_by)
                 raise ValueError('split_by operator not defined!')
+                
+        if split_by == "every_review":
+            self.train_tokens, self.test_tokens, self.train_labels, self.test_labels = train_test_split(self.tokens, self.labels, train_size=self.train_test_split, random_state=101)
     
     #make sure that every sentence is of the same length
     def buildDatasetSequence(self,max_seq_length):
