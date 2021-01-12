@@ -147,48 +147,54 @@ class DatasetWorker(object):
         self.train_labels = [t[0:max_seq_length] for t in tqdm(self.train_labels, desc="update train labels")]
         self.test_labels = [t[0:max_seq_length] for t in tqdm(self.test_labels, desc="update test labels")]
     
-    #describe train test dataset  - partially hardcoded
+    # returns all used tokens of current extraction
+    def getUsedLabels(self):
+        used_lab = set()
+        for t in self.train_labels:
+            used_lab.update(t)
+            
+        return used_lab
+    
+    # prints out some statistics like label counts for train /test split or train test split size (words, sentences) 
     def describe(self):
         print("train test ratio "+str(self.train_test_split))
         print("train data sentence count: "+str(len(self.train_labels)))
         print("test data sentence count: "+str(len(self.test_labels))+"\n")
+        
+        dataset_labels = self.getUsedLabels()
         sum_train_tokens = 0
-        train_0_count = 0
-        train_B_S_count = 0
-        train_I_S_count = 0
-        train_analysis = {"0":0, "B_S": 0, "I_S": 0}
-
         sum_test_tokens = 0
-        test_analysis = {"0":0, "B_S": 0, "I_S": 0}
-
+        
+        
+        #now make a dict with labels as keys and number as occurrence
+        statistics_train = dict()
+        statistics_test = dict()
+        for label in dataset_labels:
+            statistics_train[label] = 0
+            statistics_test[label] = 0
+            
         #train analysis
         for i in range(len(self.train_labels)):
             sum_train_tokens+=len(self.train_labels[i])
             for tok in range(len(self.train_labels[i])):
-                token = self.train_labels[i][tok]
-                if token == "O":
-                    train_analysis["0"] += 1
-                elif token == "B_S":
-                    train_analysis["B_S"] += 1
-                else:
-                    train_analysis["I_S"] += 1
+                current_label = self.train_labels[i][tok]
+                for ds_label in dataset_labels:
+                    if current_label == ds_label:
+                        statistics_train[current_label] += 1
 
         #test analysis
         for i in range(len(self.test_labels)):
             sum_test_tokens+=len(self.test_labels[i])
             for tok in range(len(self.test_labels[i])):
-                token = self.test_labels[i][tok]
-                if token == "O":
-                    test_analysis["0"] += 1
-                elif token == "B_S":
-                    test_analysis["B_S"] += 1
-                else:
-                    test_analysis["I_S"] += 1
-                    
+                current_label = self.test_labels[i][tok]
+                for ds_label in dataset_labels:
+                    if current_label == ds_label:
+                        statistics_test[current_label] += 1
+                        
         print("train token count: "+str(sum_train_tokens))
         print("test token count: "+str(sum_test_tokens)+"\n")
-        print("train details: "+str(train_analysis))
-        print("test details: "+str(test_analysis))
+        print("train details: "+str(statistics_train))
+        print("test details: "+str(statistics_test))
                     
 #does all the nasty stuff like tokenizing, lower casing etc.
 class DatasetPreprocessor(object):
