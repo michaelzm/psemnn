@@ -69,15 +69,15 @@ class DatasetWorker(object):
     # labeled the token as sentiment
     # 2. all_agree -> only use label if all reviewers agreed on the label
     # 3. every_review -> treat every review as its own and dont merge labels
+    # 4. every_review_without_uncertain -> only use the users snetence if he didnt label any difficulty / uncertainty
     def splitDataset(self, split_by):
-        if split_by != "every_review":
-            self.splitDatasetTokens(split_by)
         for d_idx, (k,v) in tqdm(enumerate(self.dataset.items()), desc="split dataset labels"):
             curr_users = [s for s in v.keys() if s != "tokens"]
             
             if split_by == "one_agrees":
                 merged_label = []
                 for i in range(len(v["tokens"])):
+                    #fill up with 0s which will get replaced by user labels later
                     merged_label.insert(i, "O")
                 
                 for usr in curr_users:
@@ -85,13 +85,13 @@ class DatasetWorker(object):
                         if e != "O":
                             del merged_label[i]
                             merged_label.insert(i, e)
-                if d_idx < self.split_size:
-                    self.train_labels.append(merged_label)
-                else:
-                    self.test_labels.append(merged_label)
+                
+                # before we manually split the labels into train and test, now we use skikit learn train test split method   
+                self.labels.append(merged_label)
+                self.tokens.append(v["tokens"])
                     
-            #split_by operation inner_join
-            #only if all reviewers agreed on a label, we add the label
+            # this split_by operation works like inner_join
+            # only if all reviewers agreed on a label, we add the label
             elif split_by == "all_agree":
                 merged_label = []
                 for token_idx in range(len(v["tokens"])):
@@ -111,34 +111,30 @@ class DatasetWorker(object):
                     else:
                         #otherwise insert O
                         merged_label.insert(token_idx, "O")
-                if d_idx < self.split_size:
-                  self.train_labels.append(merged_label)
-                else:
-                  self.test_labels.append(merged_label)
-            
+                self.labels.append(merged_label)
+                self.tokens.append(v["tokens"])
             #use every review on its own as input
-            elif split_by == "every_review":
-                #jetzt jeden user durchgehen und dessen labels anschauen -> wenn irgendwas außer "O", dann 
-                #den oben erstellten array an dieser stelle mit dessen label ersetzen
+            elif split_by == "every_review_without_uncertain":
                 uncertain = False
                 for usr in curr_users:
-                    for i, e in enumerate(v[usr]["sentiments_difficulty"]):
-                        if e != "O":
+                    # iterate labeled sentences and look if there were any difficulties or uncertainties marked
+                    for (s_d, s_u) in zip(v[usr]["sentiments_difficulty"], v[usr]["sentiments_uncertainty"]):
+                        if s_d != "O" or s_u != "O":
                             uncertain = True
-                    for i, e in enumerate(v[usr]["sentiments_uncertainty"]):
-                        if e != "O":
-                            uncertain = True
-                    #print(usr)
-                    #print(v[usr][extraction_of])
                     if uncertain == False:
                         self.labels.append(v[usr][self.extraction_of])
                         self.tokens.append(v["tokens"])
+            elif split_by == "every_review":
+                #use every users review as own label and token data entry
+                for usr in curr_users:
+                    self.labels.append(v[usr][self.extraction_of])
+                    self.tokens.append(v["tokens"])
             else:
                 print(split_by)
                 raise ValueError('split_by operator not defined!')
                 
-        if split_by == "every_review":
-            self.train_tokens, self.test_tokens, self.train_labels, self.test_labels = train_test_split(self.tokens, self.labels, train_size=self.train_test_split, random_state=101)
+        
+        self.train_tokens, self.test_tokens, self.train_labels, self.test_labels = train_test_split(self.tokens, self.labels, train_size=self.train_test_split, shuffle=False)
     
     #make sure that every sentence is of the same length
     def buildDatasetSequence(self,max_seq_length):
@@ -280,7 +276,6 @@ class VocabularyWorker(object):
         self.n_tags = len(list(self.labelclass_to_id.keys()))
 
     def convert_tokens_labels_list_to_ids_list(self, tokens_list, labels_list,max_seq_length):
-        
         token_ids_list, label_ids_list = [], []
         n_tags = len(list(self.labelclass_to_id.keys()))
         for index in tqdm(range(len(tokens_list)), desc="Converting tokens & labels to ids "):
